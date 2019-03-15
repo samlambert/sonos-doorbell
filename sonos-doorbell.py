@@ -51,65 +51,65 @@ def is_doorbell_busy():
 
 def on_doorbell(root_path, audio_file, volume, zone):
     global doorbell_playing
-        
+
     http_path = root_path + "/" + audio_file.url
     print('on_doorbell {} {} {}'.format(audio_file.name, volume, zone))
     if is_doorbell_busy():
         print('Doorbell already playing...suppressing')
-        return        
+        return
     doorbell_playing = True
 
     snap = Snapshot(zone)
     snap.snapshot()
-            
+
     # Zone does not support snapshort restore properly for soundbar
     should_ring = zone.is_coordinator and not zone.is_playing_tv
 
     if should_ring:
         trans_state = zone.get_current_transport_info()
         if trans_state['current_transport_state'] == 'PLAYING':
-            zone.pause()    
+            zone.pause()
         zone.volume = volume
 
-        print('Play doorbell on ', zone.player_name)        
+        print('Play doorbell on ', zone.player_name)
         zone.play_uri(uri=http_path, title="Doorbell")
-       
+
         time.sleep(audio_file.length)
         print('Restoring {}'.format(zone.player_name))
-                
+
         if snap.is_playing_cloud_queue:
             print("Unlikely to resume playback. Cloud restore doesn't really work")
-        snap.restore(fade=False)       
+        snap.restore(fade=False)
     else:
         print('Cannot play doorbell on the provided zone')
     doorbell_playing = False
- 
-class CustomRequestHandler(SimpleHTTPRequestHandler):   
-    
+
+class CustomRequestHandler(SimpleHTTPRequestHandler):
+
     def send_text_response(self, code, body):
         self.send_response(code)
         self.send_header("Content-type", "text/html")
         self.end_headers()
         bytes = "<body>{} - {}</body>".format(code, body).encode('utf-8')
         self.wfile.write(bytes)
-       
+
     def do_GET(self):
-        if self.path.startswith('/doorbell_press'):    
+        if self.path.startswith('/doorbell_press'):
             if is_doorbell_busy():
                 self.send_text_response(429, "Doorbell already playing")
                 return
-                
-            query = urlsplit(self.path).query            
+
+            query = urlsplit(self.path).query
             params = parse_qs(query)
-            
+
             file_to_play = None
             requested_ringtone = "ringtone" in params and params["ringtone"]
-            if requested_ringtone:                
-                for file in music_files:                 
-                    key = ''.join(params["ringtone"][0].split())                
+            if requested_ringtone:
+                for file in music_files:
+                    key = ''.join(params["ringtone"][0].split())
                     if file.key == key:
                         file_to_play = file
-                
+
             if not file_to_play:
                 if requested_ringtone:
                     # A ringtone was requested but not found
@@ -121,21 +121,21 @@ class CustomRequestHandler(SimpleHTTPRequestHandler):
                     return
                 else:
                     # Pick random ringtone
-                    file_to_play = random.choice(music_files)        
-            
+                    file_to_play = random.choice(music_files)
+
             volume = 40
             requested_volume = "volume" in params and params["volume"]
             if requested_volume and requested_volume[0].isdigit():
                 requested_volume = int(requested_volume[0])
                 volume = max(min(100, requested_volume), 0)
-            
+
             msg = "Doorbell received (request_id:{})".format(random.randint(1, 1000))
             self.send_text_response(200, msg)
             root_path = self.server.root_path
             on_doorbell(root_path, file_to_play, volume, self.server.zone)
         else:
             try:
-                super().do_GET()      
+                super().do_GET()
             except BrokenPipeError:
                 pass
 
@@ -159,50 +159,52 @@ def get_server(port, retry_bind, serve_path=None):
                 raise
 
 def get_zone(zone_name):
-    devices = discover()
+    print("sdfsdfsdfsd")
+    device = SoCo('192.168.1.242')
+    return device
     cache_name = "{}_last_known_ip.txt".format(zone_name)
     if devices:
         for device in devices:
             if device.player_name == zone_name:
                 # Save the well known IP of the device for future cache
                 # When discover() fails need to fallback to this solution
-                #try:                
+                #try:
                 f= open(cache_name,"w+")
                 f.write(device.ip_address)
                 f.close()
                 return device
     # Device not found, try be known IP
-    try:        
+    try:
         if os.path.isfile(cache_name) and os.access(cache_name, os.R_OK):
             f = open(cache_name,"r")
             ip_address = f.readline()
             f.close()
             print("Using cached IP:{} for zone:".format(ip_address, zone_name))
-            device = SoCo(ip_address)            
+            device = SoCo(ip_address)
             return device
         else:
             print("No cached record for zone")
     except:
         return None
-   
-    
+
+
 
 def load_music_files():
     """Add all music files from this folder and subfolders"""
     # Make a list of music files, right now it is done by collection all files
-    # below the current folder whose extension starts with mp3/wav    
+    # below the current folder whose extension starts with mp3/wav
     print('Loading music files...')
     for path, dirs, files in os.walk('.'):
         for file_ in files:
             file_path = os.path.relpath(os.path.join(path, file_))
-            url_path = os.path.join(*[quote(part) for part in os.path.split(file_path)])                
+            url_path = os.path.join(*[quote(part) for part in os.path.split(file_path)])
             ext = os.path.splitext(file_)[1].lower()
             name = os.path.splitext(file_)[0].lower()
             key = ''.join(name.split()) # unique key - no spaces
             audio_file = None
             if ext.startswith('.mp3'):
-                audio = MP3(file_path)                                
-                audio_file = AudioFile(url_path, audio.info.length, name, key)            
+                audio = MP3(file_path)
+                audio_file = AudioFile(url_path, audio.info.length, name, key)
             if audio_file:
                 music_files.append(audio_file)
                 print('Found:', music_files[-1])
@@ -256,7 +258,7 @@ def main():
         sys.exit(2)
 
     try:
-        load_music_files()        
+        load_music_files()
         http_server = get_server(args.port, 0, None)
         http_server.root_path = "http://{}:{}".format(args.ip, args.port)
         http_server.zone = zone
