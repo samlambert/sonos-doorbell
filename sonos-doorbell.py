@@ -159,8 +159,7 @@ def get_server(port, retry_bind, serve_path=None):
                 raise
 
 def get_zone(zone_name):
-    print("sdfsdfsdfsd")
-    device = SoCo('192.168.1.242')
+    device = SoCo('192.168.1.253')
     return device
     cache_name = "{}_last_known_ip.txt".format(zone_name)
     if devices:
